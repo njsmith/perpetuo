@@ -1,0 +1,12 @@
+.DS_Store
+.idea
+*.log
+tmp/
+*.abi3.so
+*.egg-info
+__pycache__
+
+/build
+/dist
+/target
+/test-venv*

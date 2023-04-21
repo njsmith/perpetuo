@@ -1,0 +1,36 @@
+[package]
+name = "perpetuo"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "perpetuo"
+crate-type = ["cdylib", "lib"]
+
+[[bin]]
+name = "perpetuo"
+
+[dependencies]
+anyhow = "1.0.70"
+bytemuck = { version = "1.13.1", features = ["derive", "zeroable_atomics"] }
+clap = { version = "4.2.2", features = ["derive"] }
+memmap = "0.7.0"
+once_cell = "1.17.1"
+proc-maps = "0.3.0"
+py-spy = "0.3.14"
+pyo3 = { version = "0.18.3", features = ["extension-module", "abi3", "abi3-py39"] }
+remoteprocess = "0.4.11"
+
+[build-dependencies]
+pyo3-build-config = "*"
+
+[target.'cfg(unix)'.dependencies]
+libc = "*"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "*", features = [
+  "Win32_System_SystemInformation", "Win32_System_Diagnostics_Debug"
+]}
