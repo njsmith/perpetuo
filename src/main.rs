@@ -52,7 +52,7 @@ fn watch_process(pid: u32, poll_interval: Duration) -> Result<()> {
         }
         std::thread::sleep(poll_interval);
     };
-    eprintln!("Successfully attached monitor to pid {pid}");
+    eprintln!("Successfully monitoring pid {pid}");
     loop {
         std::thread::sleep(poll_interval);
         if let Err(err) = check_once(&mut proc) {

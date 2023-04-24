@@ -5,8 +5,7 @@ import threading
 import time
 
 import trio
-from perpetuo import StallTracker
-from perpetuo._perpetuo import _stall_gil
+import perpetuo
 
 
 async def naughty():
@@ -23,13 +22,14 @@ def gil_naughty():
     test_local = "hello"
     while True:
         time.sleep(1)
-        _stall_gil(1)
+        perpetuo.stall_gil(1)
 
 
 async def main():
+    print(perpetuo.dwim())
+
     some_local = {"a": 1}
     another_local = 3
-    trio.lowlevel.add_instrument(TrioStallInstrument())
     print(f"pid {os.getpid()}")
     thread = threading.current_thread()
     print(f"{thread.ident=} {thread.native_id=}")

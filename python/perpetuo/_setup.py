@@ -1,7 +1,8 @@
+import os
 import sys
+import warnings
 import threading
 import subprocess
-import os
 
 from ._perpetuo import StallTracker
 
@@ -54,15 +55,15 @@ def instrument_trio() -> None:
     trio.lowlevel.add_instrument(TrioStallInstrument())
 
 
-def dwim() -> None:
-    instrumented_something = False
+def dwim() -> list[str]:
+    did = []
 
     try:
         instrument_gil()
     except RuntimeError:
         pass
     else:
-        instrumented_something = True
+        did.append("instrumented GIL")
 
     if "trio" in sys.modules:
         try:
@@ -70,7 +71,18 @@ def dwim() -> None:
         except RuntimeError:
             pass
         else:
-            instrumented_something = True
+            did.append("instrumented Trio")
 
-    if instrumented_something:
-        start_watcher()
+    if did:
+        if sys.platform == "darwin" and os.geteuid() != 0:
+            warnings.warn(
+                "Can't start perpetuo watcher automatically on macOS\n"
+                "To watch for stalls, run:\n"
+                f"  sudo perpetuo watch {os.getpid()}",
+                stacklevel=1,
+            )
+        else:
+            start_watcher()
+            did.append("started out of process watcher")
+
+    return did

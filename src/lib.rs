@@ -73,13 +73,13 @@ impl PyStallTracker {
 
 /// Same as time.sleep, but it holds the GIL. Useful for testing.
 #[pyfunction]
-fn _stall_gil(seconds: f64) {
+fn stall_gil(seconds: f64) {
     std::thread::sleep(std::time::Duration::from_secs_f64(seconds));
 }
 
 #[pymodule]
 fn _perpetuo(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyStallTracker>()?;
-    m.add_function(wrap_pyfunction!(_stall_gil, m)?)?;
+    m.add_function(wrap_pyfunction!(stall_gil, m)?)?;
     Ok(())
 }
