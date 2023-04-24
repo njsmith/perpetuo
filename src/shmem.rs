@@ -295,7 +295,7 @@ fn get_page_size() -> usize {
 #[cfg(windows)]
 fn get_page_size() -> usize {
     use windows_sys::Win32::System::SystemInformation::{GetSystemInfo, SYSTEM_INFO};
-    let mut info: SYSTEM_INFO = mem::zeroed();
+    let mut info: SYSTEM_INFO = std::mem::zeroed();
     unsafe {
         GetSystemInfo(&mut info as *mut _);
     }
