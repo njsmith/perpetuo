@@ -1,6 +1,6 @@
 pub mod shmem;
 
-use crate::shmem::{alloc_slot, StallTracker};
+use crate::shmem::{alloc_slot, StallTracker, ThreadHint, GIL};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
@@ -10,24 +10,27 @@ struct PyStallTracker {
 }
 
 #[derive(FromPyObject)]
-enum ThreadHint {
+enum ThreadHintArg {
     #[pyo3(transparent, annotation = "str")]
     String(String),
     #[pyo3(transparent, annotation = "int")]
     Int(usize),
 }
 
-impl ThreadHint {
-    fn encode(&self) -> PyResult<usize> {
+impl ThreadHintArg {
+    fn encode(&self) -> PyResult<ThreadHint> {
         match self {
-            ThreadHint::String(s) => {
+            ThreadHintArg::String(s) => {
                 if s == "gil" {
-                    Ok(0)
+                    Ok(GIL)
                 } else {
-                    Err(PyValueError::new_err("must be integer or 'gil'"))
+                    Err(PyValueError::new_err("must be integer or the string 'gil'"))
                 }
             }
-            ThreadHint::Int(i) => Ok(*i),
+            ThreadHintArg::Int(i) => match ThreadHint::from_thread_id(*i) {
+                Ok(thread_hint) => Ok(thread_hint),
+                Err(rust_err) => Err(PyValueError::new_err(rust_err.to_string())),
+            },
         }
     }
 }
@@ -35,7 +38,7 @@ impl ThreadHint {
 #[pymethods]
 impl PyStallTracker {
     #[new]
-    fn new(name: &str, thread_hint: ThreadHint) -> PyResult<Self> {
+    fn new(name: &str, thread_hint: ThreadHintArg) -> PyResult<Self> {
         let stall_tracker = match alloc_slot(name, thread_hint.encode()?) {
             Ok(slot) => slot,
             Err(err) => return Err(PyRuntimeError::new_err(err.to_string())),

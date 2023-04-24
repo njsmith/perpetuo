@@ -2,6 +2,7 @@
 use anyhow::{bail, Result};
 use bytemuck::{Pod, Zeroable};
 use once_cell::sync::Lazy;
+use py_spy::StackTrace;
 use remoteprocess::ProcessMemory;
 use std::{
     mem::{align_of, size_of},
@@ -9,7 +10,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 // Just output from secrets.token_bytes(16)
@@ -22,25 +23,33 @@ static PAGE_SIZE: Lazy<usize> = Lazy::new(get_page_size);
 #[repr(transparent)]
 pub struct ThreadHint(usize);
 
-const GIL: ThreadHint = ThreadHint(0);
+pub const GIL: ThreadHint = ThreadHint(0);
 
 impl ThreadHint {
-    fn from_thread_id(id: usize) -> Result<Self> {
+    pub fn from_thread_id(id: usize) -> Result<Self> {
         if id == 0 {
             bail!("thread id must be non-zero");
         }
         Ok(ThreadHint(id))
     }
 
-    fn is_gil(self) -> bool {
+    pub fn is_gil(self) -> bool {
         self.0 == 0
     }
 
-    fn thread_id(self) -> Result<usize> {
+    pub fn thread_id(self) -> Result<usize> {
         if self.is_gil() {
             bail!("thread hint is 'GIL', not a specific thread")
         }
         Ok(self.0)
+    }
+
+    pub fn relevant(self, trace: &StackTrace) -> bool {
+        if self.is_gil() {
+            trace.owns_gil
+        } else {
+            trace.thread_id == self.0.try_into().unwrap()
+        }
     }
 }
 
@@ -60,9 +69,11 @@ pub struct SlotMetadata {
     pub thread_hint: ThreadHint,
 }
 
-pub struct Stall {
+pub struct StallReport {
+    pub id: usize,
     pub name: String,
     pub thread_hint: ThreadHint,
+    pub duration: Duration,
 }
 
 #[derive(Zeroable, Debug)]
@@ -143,125 +154,134 @@ pub fn alloc_slot(name: &str, thread_hint: ThreadHint) -> Result<&'static mut St
     Ok(slot)
 }
 
+struct StallTrackerSnapshot {
+    stall_tracker: StallTracker,
+    last_updated: Instant,
+}
+
 pub struct PerpetuoProc {
     slots_ptr: usize,
     slots_count: usize,
-    previous_snapshot: Vec<StallTracker>,
+    last_updates: Vec<StallTrackerSnapshot>,
     pub spy: py_spy::PythonSpy,
 }
 
 impl PerpetuoProc {
-    pub fn new(pid: i32, config: &py_spy::Config, poll_interval: Duration) -> Result<PerpetuoProc> {
-        #[cfg(target_os = "macos")]
-        if unsafe { libc::geteuid() } != 0 {
-            bail!("On macOS, this program must be run as root! sudo try again");
-        }
-
-        let spy = loop {
-            if let Ok(spy) = py_spy::PythonSpy::new(pid, config) {
-                break spy;
+    // Err means something is broken (or process doesn't exist). Either way, give up.
+    // None means everything is fine but process isn't ready yet (python not yet loaded,
+    // perpetuo instrumentation not yet loaded, etc.)
+    pub fn new(pid: u32, config: &py_spy::Config) -> Result<Option<PerpetuoProc>> {
+        let spy = match py_spy::PythonSpy::new(pid.try_into()?, config) {
+            Ok(spy) => spy,
+            Err(_) => {
+                if remoteprocess::Process::new(pid.try_into()?).is_err() {
+                    bail!("Process {pid} doesn't seem to exist (maybe it exited)");
+                } else {
+                    return Ok(None);
+                }
             }
-            std::thread::sleep(poll_interval);
         };
 
-        loop {
-            // PythonSpy::new needs to poke around in the target process, and we
-            // know it succeeded. So if we still can't get the maps then there's
-            // some deeper problem (like missing permissions, or process has
-            // exited), so fail out if this fails
-            let maps = proc_maps::get_process_maps(pid as proc_maps::Pid)?;
-            for map in maps {
-                // Exported slots page will be...
-                // - exactly one page long
-                if map.size() != *PAGE_SIZE {
-                    eprintln!("bad size");
+        let maps = proc_maps::get_process_maps(pid as proc_maps::Pid)?;
+        for map in maps {
+            // Exported slots page will be...
+            // - exactly one page long
+            if map.size() != *PAGE_SIZE {
+                continue;
+            }
+            // - anonymous
+            // XX TODO: this returns bad data on macOS! anonymous memory regions get
+            // files assigned to them (seems like it's whatever file was seen
+            // last?). We should report it upstream... in the mean time we can just
+            // check all the regions.
+            // if map.filename().is_some() {
+            //     eprintln!("has file {:?}", map.filename().unwrap());
+            //     continue;
+            // }
+            match spy.process.copy_struct::<ShmemHeader>(map.start()) {
+                Err(_) => {
+                    // Sometimes we fail to read b/c the page is marked
+                    // non-readable, e.g. b/c it's a malloc guard page. So this is
+                    // normal, not a real error.
                     continue;
                 }
-                // - anonymous
-                // XX TODO: this returns bad data on macOS! anonymous memory regions get
-                // files assigned to them (seems like it's whatever file was seen
-                // last?). We should report it upstream... in the mean time we can just
-                // check all the regions.
-                // if map.filename().is_some() {
-                //     eprintln!("has file {:?}", map.filename().unwrap());
-                //     continue;
-                // }
-                match spy.process.copy_struct::<ShmemHeader>(map.start()) {
-                    Err(_) => {
-                        // Sometimes we fail to read b/c the page is marked
-                        // non-readable, e.g. b/c it's a malloc guard page. So this is
-                        // normal, not a real error.
+                Ok(header) => {
+                    if &header.magic != MAGIC {
                         continue;
                     }
-                    Ok(header) => {
-                        if &header.magic != MAGIC {
-                            continue;
-                        }
-                        if header.self_address != map.start() {
-                            continue;
-                        }
-                        // We found it! Can we use it?
-                        if header.version != VERSION {
-                            anyhow::bail!(
-                                "{} format version mismatch (target is v{}; we support v{})",
-                                env!("CARGO_PKG_NAME"),
-                                header.version,
-                                VERSION
-                            );
-                        }
-                        // We can use it!
-                        eprintln!("gotcha");
-                        let align = align_of::<StallTracker>();
-                        let header_end = map.start() + size_of::<ShmemHeader>();
-                        let slots_ptr = round_up_to_multiple(header_end, align);
-                        let slots_count =
-                            (map.start() + map.size() - slots_ptr) / size_of::<StallTracker>();
-                        let previous_snapshot = spy
-                            .process
-                            .copy_vec::<StallTracker>(slots_ptr, slots_count)?;
-                        return Ok(PerpetuoProc {
-                            slots_ptr,
-                            slots_count,
-                            previous_snapshot,
-                            spy,
-                        });
+                    if header.self_address != map.start() {
+                        continue;
                     }
-                };
-            }
-            std::thread::sleep(poll_interval);
+                    // We found it! Can we use it?
+                    if header.version != VERSION {
+                        anyhow::bail!(
+                            "{} format version mismatch (target is v{}; we support v{})",
+                            env!("CARGO_PKG_NAME"),
+                            header.version,
+                            VERSION
+                        );
+                    }
+                    // We can use it!
+                    let align = align_of::<StallTracker>();
+                    let header_end = map.start() + size_of::<ShmemHeader>();
+                    let slots_ptr = round_up_to_multiple(header_end, align);
+                    let slots_count =
+                        (map.start() + map.size() - slots_ptr) / size_of::<StallTracker>();
+                    let slots = spy
+                        .process
+                        .copy_vec::<StallTracker>(slots_ptr, slots_count)?;
+                    let now = Instant::now();
+                    let last_updates = slots
+                        .into_iter()
+                        .map(|stall_tracker| StallTrackerSnapshot {
+                            stall_tracker,
+                            last_updated: now,
+                        })
+                        .collect();
+                    return Ok(Some(PerpetuoProc {
+                        slots_ptr,
+                        slots_count,
+                        last_updates,
+                        spy,
+                    }));
+                }
+            };
         }
+        Ok(None)
     }
 
-    pub fn check_stalls(&mut self) -> Result<Vec<Stall>> {
-        let current_snapshot = self
+    pub fn check_stalls(&mut self) -> Result<Vec<StallReport>> {
+        let now = Instant::now();
+        let current_slots = self
             .spy
             .process
             .copy_vec::<StallTracker>(self.slots_ptr, self.slots_count)?;
 
         let mut stalls = Vec::new();
 
-        for i in 0..self.slots_count {
-            let previous = &self.previous_snapshot[i];
-            let current = &current_snapshot[i];
-            if !current.is_active() {
-                continue;
-            }
-            if current.count.load(Ordering::Relaxed) == previous.count.load(Ordering::Relaxed) {
-                // uh oh, looks like it's stalled!
+        for (id, current) in current_slots.into_iter().enumerate() {
+            let mut snapshot = &mut self.last_updates[id];
+            if current.is_active()
+                && current.count.load(Ordering::Relaxed)
+                    == snapshot.stall_tracker.count.load(Ordering::Relaxed)
+            {
+                // stall detected!
                 let name = self
                     .spy
                     .process
                     .copy(current.metadata.name_ptr, current.metadata.name_len)?;
                 let name = String::from_utf8(name)?;
-                stalls.push(Stall {
+                stalls.push(StallReport {
+                    id,
                     name,
                     thread_hint: current.metadata.thread_hint,
+                    duration: now - snapshot.last_updated,
                 })
+            } else {
+                snapshot.stall_tracker = current;
+                snapshot.last_updated = now;
             }
         }
-
-        self.previous_snapshot = current_snapshot;
-
         Ok(stalls)
     }
 }
