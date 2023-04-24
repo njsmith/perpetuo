@@ -18,6 +18,9 @@ jobs:
         env:
           CIBW_BEFORE_ALL_LINUX: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && sudo apt install libunwind-dev"
           CIBW_ENVIRONMENT: 'PATH="$HOME/.cargo/bin:$PATH"'
+          CIBW_ARCHS_LINUX: "x86_64"
+          CIBW_ARCHS_WINDOWS: "AMD64"
+          CIBW_ARCHS_MACOS: "x86_64 universal2"
         # env:
         #   CIBW_SOME_OPTION: value
         #    ...
