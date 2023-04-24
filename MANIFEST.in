@@ -1,3 +1,4 @@
-include Cargo.toml Cargo.lock
+include Cargo.toml Cargo.lock build.rs pyproject.py setup.py
+include LICENSE LICENSE.APACHE2 LICENSE.MIT README.md
 recursive-include src *
 recursive-include python *

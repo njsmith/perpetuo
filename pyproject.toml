@@ -3,12 +3,25 @@ requires = ["setuptools", "wheel", "setuptools-rust"]
 
 [project]
 name = "perpetuo"
-version = "0.0.1"
+version = "0.1.0"
+authors = [
+  {name = "Nathaniel J. Smith", email = "njs@pobox.com"},
+]
+readme = "README.md"
 requires-python = ">=3.7"
+license = {text = "MIT OR Apache-2.0"}
+description = "A stall tracker for Python's GIL and Trio tasks"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3 :: Only",
 ]
 
-
+[project.urls]
+repository = "https://github.com/njsmith/perpetuo"
