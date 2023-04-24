@@ -16,7 +16,7 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.12.3
         env:
-          CIBW_BEFORE_ALL_LINUX="curl https://sh.rustup.rs -sSf | sh"
+          CIBW_BEFORE_ALL_LINUX: "curl https://sh.rustup.rs -sSf | sh"
         # env:
         #   CIBW_SOME_OPTION: value
         #    ...
