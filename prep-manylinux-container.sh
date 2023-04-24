@@ -14,7 +14,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 cd /
 curl -L https://github.com/libunwind/libunwind/archive/refs/tags/v1.6.2.tar.gz  -o libunwind.tar.gz
 tar xvf libunwind.tar.gz
-cd libunwind
+cd libunwind-*/
 autoreconf -i
 ./configure CFLAGS="-fPIC"
 make -j3
