@@ -1,4 +1,5 @@
 include Cargo.toml Cargo.lock build.rs pyproject.py setup.py
 include LICENSE LICENSE.APACHE2 LICENSE.MIT README.md
+include prep-manylinux-container.sh
 recursive-include src *
 recursive-include python *
