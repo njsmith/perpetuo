@@ -298,8 +298,8 @@ fn get_page_size() -> usize {
     unsafe {
         let mut info: SYSTEM_INFO = std::mem::zeroed();
         GetSystemInfo(&mut info as *mut _);
+        info.dwPageSize as usize
     }
-    info.dwPageSize as usize
 }
 
 fn round_up_to_multiple(value: usize, multiple: usize) -> usize {
