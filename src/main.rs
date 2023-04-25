@@ -46,12 +46,33 @@ fn watch_process(pid: u32, poll_interval: Duration) -> Result<()> {
     config.dump_locals = 10;
     config.full_filenames = true;
     eprintln!("Attempting to monitor pid {pid}...");
-    let mut proc = loop {
-        if let Some(proc) = PerpetuoProc::new(pid, &config)? {
-            break proc;
+    // let mut proc = loop {
+    //     if let Some(proc) = PerpetuoProc::new(pid, &config)? {
+    //         break proc;
+    //     }
+    //     std::thread::sleep(poll_interval);
+    // };
+    let result = PerpetuoProc::new(pid, &config);
+    #[cfg(unix)]
+    if let Err(err) = &result {
+        if permission_denied(&err) {
+            bail!(
+                "Permission denied: maybe you have ptrace locked down? Try:\n\
+                 \n\
+                 sudo perpetuo watch {pid}{}",
+                if cfg!(target_is = "linux") {
+                    "\n\
+                     \n\
+                     or for a more permanent solution:\n\
+                     \n\
+                     sudo setcap cap_sys_ptrace=ep $(which perpetuo)"
+                } else {
+                    ""
+                }
+            );
         }
-        std::thread::sleep(poll_interval);
-    };
+    }
+    let mut proc = result?;
     eprintln!("Successfully monitoring pid {pid}");
     loop {
         std::thread::sleep(poll_interval);
@@ -63,6 +84,21 @@ fn watch_process(pid: u32, poll_interval: Duration) -> Result<()> {
             return Err(err);
         }
     }
+}
+
+#[cfg(unix)]
+fn permission_denied(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        if let Some(ioerror) = cause.downcast_ref::<std::io::Error>() {
+            ioerror.kind() == std::io::ErrorKind::PermissionDenied
+        } else if let Some(remoteprocess::Error::IOError(ioerror)) =
+            cause.downcast_ref::<remoteprocess::Error>()
+        {
+            ioerror.kind() == std::io::ErrorKind::PermissionDenied
+        } else {
+            false
+        }
+    })
 }
 
 fn check_once(proc: &mut PerpetuoProc) -> Result<()> {
@@ -83,13 +119,13 @@ fn check_once(proc: &mut PerpetuoProc) -> Result<()> {
             }
         }
         if !relevant.is_empty() {
-            eprintln!("Probably responsible:");
+            eprintln!("This thread is probably responsible:\n");
             for trace in &relevant {
                 dump_stacktrace(trace);
             }
         }
         if !rest.is_empty() {
-            eprintln!("Other threads (probably not responsible):");
+            eprintln!("Other threads (probably not responsible):\n");
             for trace in &rest {
                 dump_stacktrace(trace);
             }
@@ -99,8 +135,14 @@ fn check_once(proc: &mut PerpetuoProc) -> Result<()> {
 }
 
 fn dump_stacktrace(trace: &StackTrace) {
+    eprintln!(
+        "    Thread {:x} ({}{})",
+        trace.thread_id,
+        trace.status_str(),
+        if trace.owns_gil { ", holding GIL" } else { "" }
+    );
     for frame in trace.frames.iter().rev() {
-        eprintln!("\t{} ({}:{})", frame.name, frame.filename, frame.line);
+        eprintln!("        {} ({}:{})", frame.name, frame.filename, frame.line);
         if let Some(locals) = &frame.locals {
             for local in locals {
                 eprintln!(
@@ -111,11 +153,5 @@ fn dump_stacktrace(trace: &StackTrace) {
             }
         }
     }
-    eprintln!(
-        "\t(thread id {:x}, {}{})",
-        trace.thread_id,
-        trace.status_str(),
-        if trace.owns_gil { ", holding GIL" } else { "" }
-    );
     eprintln!("");
 }

@@ -167,22 +167,11 @@ pub struct PerpetuoProc {
 }
 
 impl PerpetuoProc {
-    // Err means something is broken (or process doesn't exist). Either way, give up.
-    // None means everything is fine but process isn't ready yet (python not yet loaded,
-    // perpetuo instrumentation not yet loaded, etc.)
-    pub fn new(pid: u32, config: &py_spy::Config) -> Result<Option<PerpetuoProc>> {
-        let spy = match py_spy::PythonSpy::new(pid.try_into()?, config) {
-            Ok(spy) => spy,
-            Err(_) => {
-                if remoteprocess::Process::new(pid.try_into()?).is_err() {
-                    bail!("Process {pid} doesn't seem to exist (maybe it exited)");
-                } else {
-                    return Ok(None);
-                }
-            }
-        };
+    pub fn new(pid: u32, config: &py_spy::Config) -> Result<PerpetuoProc> {
+        let spy = py_spy::PythonSpy::new(pid.try_into()?, config)?;
 
         let maps = proc_maps::get_process_maps(pid as proc_maps::Pid)?;
+        let mut read_any = false;
         for map in maps {
             // Exported slots page will be...
             // - exactly one page long
@@ -206,6 +195,7 @@ impl PerpetuoProc {
                     continue;
                 }
                 Ok(header) => {
+                    read_any = true;
                     if &header.magic != MAGIC {
                         continue;
                     }
@@ -238,16 +228,19 @@ impl PerpetuoProc {
                             last_updated: now,
                         })
                         .collect();
-                    return Ok(Some(PerpetuoProc {
+                    return Ok(PerpetuoProc {
                         slots_ptr,
                         slots_count,
                         last_updates,
                         spy,
-                    }));
+                    });
                 }
             };
         }
-        Ok(None)
+        if !read_any {
+            bail!("Couldn't access any process memory -- maybe you need ptrace permission?");
+        }
+        bail!("Couldn't find perpetuo instrumentation (did you enable it?)");
     }
 
     pub fn check_stalls(&mut self) -> Result<Vec<StallReport>> {
