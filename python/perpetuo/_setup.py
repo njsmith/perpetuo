@@ -74,15 +74,7 @@ def dwim() -> list[str]:
             did.append("instrumented Trio")
 
     if did:
-        if sys.platform == "darwin" and os.geteuid() != 0:
-            warnings.warn(
-                "Can't start perpetuo watcher automatically on macOS\n"
-                "To watch for stalls, run:\n"
-                f"  sudo perpetuo watch {os.getpid()}",
-                stacklevel=1,
-            )
-        else:
-            start_watcher()
-            did.append("started out of process watcher")
+        start_watcher()
+        did.append("started out of process watcher")
 
     return did

@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
+use indoc::indoc;
 use py_spy::StackTrace;
 
 use perpetuo::shmem::PerpetuoProc;
@@ -24,11 +25,6 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let poll_interval = std::time::Duration::from_secs_f64(cli.poll_interval);
-
-    #[cfg(target_os = "macos")]
-    if unsafe { libc::geteuid() } != 0 {
-        bail!("On macOS, this program must be run as root! sudo try again");
-    }
 
     match cli.command {
         Commands::Watch { pid } => watch_process(pid, poll_interval)?,
@@ -55,20 +51,29 @@ fn watch_process(pid: u32, poll_interval: Duration) -> Result<()> {
     let result = PerpetuoProc::new(pid, &config);
     #[cfg(unix)]
     if let Err(err) = &result {
-        if permission_denied(&err) {
+        if cfg!(target_os = "macos") && unsafe { libc::geteuid() } != 0 {
             bail!(
-                "Permission denied: maybe you have ptrace locked down? Try:\n\
-                 \n\
-                 sudo perpetuo watch {pid}{}",
-                if cfg!(target_is = "linux") {
-                    "\n\
-                     \n\
-                     or for a more permanent solution:\n\
-                     \n\
-                     sudo setcap cap_sys_ptrace=ep $(which perpetuo)"
-                } else {
-                    ""
-                }
+                indoc! {"
+                    On macOS, this program must be run as root. Try:
+
+                        sudo perpetuo watch {}
+                "},
+                pid
+            );
+        }
+        if cfg!(target_os = "linux") && permission_denied(&err) {
+            bail!(
+                indoc! {"
+                    Permission denied: maybe you have ptrace locked down? Try:
+
+                        sudo perpetuo watch {}
+
+                    or for a more permanent solution:
+
+                        sudo setcap cap_sys_ptrace=ep {}
+                "},
+                pid,
+                std::env::current_exe()?.display(),
             );
         }
     }
