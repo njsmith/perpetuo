@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 from setuptools_rust import Binding, RustBin, RustExtension, Strip
 from wheel.bdist_wheel import bdist_wheel
 
@@ -28,7 +28,7 @@ setup(
     ],
     cmdclass={"bdist_wheel": bdist_wheel_abi3},
     package_dir={"": "python"},
-    packages=["perpetuo"],
+    packages=find_packages(where="python"),
     package_data={"perpetuo": ["py.typed", "__init__.pyi"]},
     zip_safe=False,
 )
