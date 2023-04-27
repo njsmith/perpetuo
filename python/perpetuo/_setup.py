@@ -9,10 +9,14 @@ from ._perpetuo import StallTracker
 WATCHER = None
 
 
-def start_watcher() -> None:
+def start_watcher(*, poll_interval: float | None = None) -> None:
     global WATCHER
     if WATCHER is None:
-        subprocess.Popen(["perpetuo", "watch", str(os.getpid())])
+        if poll_interval is not None:
+            poll_args = ["--poll-interval", str(poll_interval)]
+        else:
+            poll_args = []
+        subprocess.Popen(["perpetuo", "watch", str(os.getpid())] + poll_args)
 
 
 def instrument_gil() -> None:
@@ -54,7 +58,7 @@ def instrument_trio() -> None:
     trio.lowlevel.add_instrument(TrioStallInstrument())
 
 
-def dwim() -> list[str]:
+def dwim(*, poll_interval: float | None = None) -> list[str]:
     did = []
 
     try:
@@ -73,7 +77,7 @@ def dwim() -> list[str]:
             did.append("instrumented Trio")
 
     if did:
-        start_watcher()
+        start_watcher(poll_interval=poll_interval)
         did.append("started out of process watcher")
 
     return did
