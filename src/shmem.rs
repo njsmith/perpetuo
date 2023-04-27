@@ -1,4 +1,3 @@
-#[allow(dead_code)]
 use anyhow::{bail, Result};
 use bytemuck::{Pod, Zeroable};
 use once_cell::sync::Lazy;
