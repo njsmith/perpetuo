@@ -1,12 +1,12 @@
 pub mod shmem;
 
-use crate::shmem::{alloc_slot, StallTracker, ThreadHint, GIL};
+use crate::shmem::{alloc_slot, release_slot, StallTracker, ThreadHint, GIL};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 #[pyclass(name = "StallTracker", module = "perpetuo")]
 struct PyStallTracker {
-    stall_tracker: &'static mut StallTracker,
+    stall_tracker: Option<&'static mut StallTracker>,
 }
 
 #[derive(FromPyObject)]
@@ -35,6 +35,12 @@ impl ThreadHintArg {
     }
 }
 
+fn rustify(py: &PyStallTracker) -> PyResult<&&mut StallTracker> {
+    py.stall_tracker
+        .as_ref()
+        .ok_or_else(|| PyRuntimeError::new_err("attempt to use closed StallTracker"))
+}
+
 #[pymethods]
 impl PyStallTracker {
     #[new]
@@ -43,31 +49,51 @@ impl PyStallTracker {
             Ok(slot) => slot,
             Err(err) => return Err(PyRuntimeError::new_err(err.to_string())),
         };
-        Ok(PyStallTracker { stall_tracker })
+        Ok(PyStallTracker {
+            stall_tracker: Some(stall_tracker),
+        })
     }
 
     fn go_active(&self) -> PyResult<()> {
-        if self.stall_tracker.is_active() {
+        let stall_tracker = rustify(&self)?;
+        if stall_tracker.is_active() {
             return Err(PyRuntimeError::new_err("Already active"));
         }
-        self.stall_tracker.toggle();
+        stall_tracker.toggle();
         Ok(())
     }
 
     fn go_idle(&self) -> PyResult<()> {
-        if !self.stall_tracker.is_active() {
+        let stall_tracker = rustify(&self)?;
+        if !stall_tracker.is_active() {
             return Err(PyRuntimeError::new_err("Already idle"));
         }
-        self.stall_tracker.toggle();
+        stall_tracker.toggle();
         Ok(())
     }
 
-    fn is_active(&self) -> bool {
-        self.stall_tracker.is_active()
+    fn is_active(&self) -> PyResult<bool> {
+        let stall_tracker = rustify(&self)?;
+        Ok(stall_tracker.is_active())
     }
 
-    fn counter_address(&self) -> usize {
-        &self.stall_tracker.count as *const _ as usize
+    fn counter_address(&self) -> PyResult<usize> {
+        Ok(&rustify(&self)?.count as *const _ as usize)
+    }
+
+    fn close(&mut self) -> PyResult<()> {
+        if let Some(stall_tracker) = self.stall_tracker.take() {
+            release_slot(stall_tracker).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for PyStallTracker {
+    fn drop(&mut self) {
+        if let Err(err) = self.close() {
+            eprintln!("Warning: unraiseable error in perpetuo library: {err}");
+        }
     }
 }
 

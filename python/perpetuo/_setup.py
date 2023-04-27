@@ -6,8 +6,8 @@ import subprocess
 from ._perpetuo import StallTracker
 
 
-WATCHER = None
-DID_INSTRUMENT_GIL = False
+WATCHER: subprocess.Popen | None = None
+GIL_STALLTRACKER: StallTracker | None = None
 
 
 def start_watcher(*, poll_interval: float | None = None) -> None:
@@ -20,17 +20,25 @@ def start_watcher(*, poll_interval: float | None = None) -> None:
         subprocess.Popen(["perpetuo", "watch", str(os.getpid())] + poll_args)
 
 
+def stop_watcher() -> None:
+    global WATCHER
+    if WATCHER is not None:
+        WATCHER.kill()
+        WATCHER.wait()
+        WATCHER = None
+
+
 def instrument_gil() -> None:
-    global DID_INSTRUMENT_GIL
-    if not DID_INSTRUMENT_GIL:
-        if hasattr(sys, "_set_stall_counter"):
-            gil_tracker = StallTracker("GIL", "gil")
-            sys._set_stall_counter(gil_tracker.counter_address())
-            DID_INSTRUMENT_GIL = True
-        else:
-            raise RuntimeError(
-                "This Python was not built with the perpetuo GIL instrumentation patch"
-            )
+    global GIL_STALLTRACKER
+    if GIL_STALLTRACKER is not None:
+        return
+    if hasattr(sys, "_set_stall_counter"):
+        GILL_STALLTRACKER = StallTracker("GIL", "gil")
+        sys._set_stall_counter(GILL_STALLTRACKER.counter_address())
+    else:
+        raise RuntimeError(
+            "This Python was not built with the perpetuo GIL instrumentation patch"
+        )
 
 
 def instrument_trio() -> None:
@@ -42,22 +50,31 @@ def instrument_trio() -> None:
             # before it becomes active
             self.stall_tracker: StallTracker | None = None
 
+        def _init(self):
+            assert self.stall_tracker is None
+            thread = threading.current_thread().ident
+            self.stall_tracker = StallTracker(
+                f"Trio run loop (thread {thread:#_x})", thread
+            )
+
         def before_task_step(self, _: trio.lowlevel.Task) -> None:
             if self.stall_tracker is None:
-                self.stall_tracker = StallTracker(
-                    "Trio run loop", threading.current_thread().ident
-                )
-                # New StallTracker starts out in the "active" state
+                self._init()
+                # New StallTracker starts out in the "active" state, which is what we
+                # want
             else:
                 self.stall_tracker.go_active()
 
         def after_task_step(self, _: trio.lowlevel.Task) -> None:
             if self.stall_tracker is None:
-                self.stall_tracker = StallTracker(
-                    "Trio run loop", threading.current_thread().ident
-                )
-                # New StallTracker starts out in the "active" state
+                self._init()
+                assert self.stall_tracker is not None
+                # New StallTracker starts out in the "active" state, so need to toggle
+                # it
             self.stall_tracker.go_idle()
+
+        def after_run(self) -> None:
+            self.stall_tracker.close()
 
     trio.lowlevel.add_instrument(TrioStallInstrument())
 

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use bytemuck::{Pod, Zeroable};
 use once_cell::sync::Lazy;
 use py_spy::StackTrace;
@@ -120,12 +120,12 @@ fn create_exported_slots() -> &'static mut [StallTracker] {
     static_slots
 }
 
-static UNUSED_SLOTS: Mutex<Option<&'static mut [StallTracker]>> = Mutex::new(None);
+static SLOT_FREELIST: Mutex<Option<Vec<&'static mut StallTracker>>> = Mutex::new(None);
 
 pub fn alloc_slot(name: &str, thread_hint: ThreadHint) -> Result<&'static mut StallTracker> {
-    let mut guard = UNUSED_SLOTS.lock().unwrap();
+    let mut guard = SLOT_FREELIST.lock().unwrap();
     if guard.is_none() {
-        *guard = Some(create_exported_slots());
+        *guard = Some(create_exported_slots().iter_mut().collect());
     }
 
     let string_to_leak = name.to_owned();
@@ -138,19 +138,28 @@ pub fn alloc_slot(name: &str, thread_hint: ThreadHint) -> Result<&'static mut St
         thread_hint,
     };
 
-    let unused_slots: &'static mut [StallTracker] = guard.take().unwrap();
-    if unused_slots.is_empty() {
-        bail!("Ran out of stall tracker slots in the instrumentation page")
-    }
-    let (head, tail) = unused_slots.split_at_mut(1);
-    let slot = &mut head[0];
-    *guard = Some(tail);
+    let freelist = guard.as_mut().unwrap();
+
+    let slot = freelist.pop().ok_or_else(|| {
+        anyhow!("Ran out of stall tracker slots in the perpetuo instrumentation page")
+    })?;
+    assert!(!slot.is_active());
     slot.metadata = metadata;
     // Release ordering to ensure that 'metadata' update is published before the store
     // becomes visible, to maintain the invariant that out-of-process reads should never
-    // see a Slot with non-zero count + invalid metadata.
-    slot.count.store(1, Ordering::Release);
+    // see a Slot with odd count + invalid metadata.
+    slot.count.fetch_add(1, Ordering::Release);
     Ok(slot)
+}
+
+pub fn release_slot(slot: &'static mut StallTracker) -> Result<()> {
+    if slot.is_active() {
+        bail!("attempt to release active StallTracker");
+    }
+    let mut guard = SLOT_FREELIST.lock().unwrap();
+    let freelist = guard.as_mut().unwrap();
+    freelist.push(slot);
+    Ok(())
 }
 
 struct StallTrackerSnapshot {
