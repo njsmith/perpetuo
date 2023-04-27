@@ -151,7 +151,7 @@ fn dump_stacktrace(trace: &StackTrace) {
         if let Some(locals) = &frame.locals {
             for local in locals {
                 eprintln!(
-                    "\t\t{} = {}",
+                    "            {} = {}",
                     local.name,
                     local.repr.as_deref().unwrap_or("?")
                 );
