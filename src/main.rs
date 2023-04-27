@@ -71,6 +71,8 @@ fn watch_process(pid: u32, poll_interval: Duration) -> Result<()> {
                     or for a more permanent solution:
 
                         sudo setcap cap_sys_ptrace=ep {}
+
+                    or in a container, grant the container the CAP_SYS_PTRACE capability.
                 "},
                 pid,
                 std::env::current_exe()?.display(),
