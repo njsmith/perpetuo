@@ -62,6 +62,9 @@ jobs:
         #   output-dir: wheelhouse
         #   config-file: "{package}/pyproject.toml"
 
+      - name: Audit wheels
+        run: pipx run abi3audit wheelhouse/*.whl
+
       - uses: actions/upload-artifact@v3
         with:
           path: ./wheelhouse/*.whl
