@@ -1,6 +1,5 @@
 import os
 import sys
-import warnings
 import threading
 import subprocess
 
