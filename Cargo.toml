@@ -23,7 +23,8 @@ once_cell = "1.17.1"
 proc-maps = "0.3.0"
 py-spy = "0.3.14"
 pyo3 = { version = "0.18.3", features = ["extension-module", "abi3", "abi3-py39"] }
-remoteprocess = "0.4.11"
+#remoteprocess = "0.4.11"
+remoteprocess = { git = "https://github.com/njsmith/remoteprocess", branch = "static-link" }
 
 [build-dependencies]
 pyo3-build-config = "*"

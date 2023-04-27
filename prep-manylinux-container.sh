@@ -16,6 +16,6 @@ curl -L https://github.com/libunwind/libunwind/archive/refs/tags/v1.6.2.tar.gz  
 tar xvf libunwind.tar.gz
 cd libunwind-*/
 autoreconf -i
-./configure CFLAGS="-fPIC" --disable-shared
+./configure CFLAGS="-fPIC"
 make -j3
 make install
