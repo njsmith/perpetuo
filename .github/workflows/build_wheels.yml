@@ -63,6 +63,7 @@ jobs:
         #   config-file: "{package}/pyproject.toml"
 
       - name: Audit wheels
+        shell: bash
         run: pipx run abi3audit wheelhouse/*.whl
 
       - uses: actions/upload-artifact@v3
