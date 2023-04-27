@@ -7,6 +7,7 @@ from ._perpetuo import StallTracker
 
 
 WATCHER = None
+DID_INSTRUMENT_GIL = False
 
 
 def start_watcher(*, poll_interval: float | None = None) -> None:
@@ -20,13 +21,16 @@ def start_watcher(*, poll_interval: float | None = None) -> None:
 
 
 def instrument_gil() -> None:
-    if hasattr(sys, "_set_stall_counter"):
-        gil_tracker = StallTracker("GIL", "gil")
-        sys._set_stall_counter(gil_tracker.counter_address())
-    else:
-        raise RuntimeError(
-            "This Python was not built with the perpetuo GIL instrumentation patch"
-        )
+    global DID_INSTRUMENT_GIL
+    if not DID_INSTRUMENT_GIL:
+        if hasattr(sys, "_set_stall_counter"):
+            gil_tracker = StallTracker("GIL", "gil")
+            sys._set_stall_counter(gil_tracker.counter_address())
+            DID_INSTRUMENT_GIL = True
+        else:
+            raise RuntimeError(
+                "This Python was not built with the perpetuo GIL instrumentation patch"
+            )
 
 
 def instrument_trio() -> None:
