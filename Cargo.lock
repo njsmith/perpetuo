@@ -330,6 +330,7 @@ dependencies = [
  "bitflags",
  "clap_lex 0.4.1",
  "strsim 0.10.0",
+ "terminal_size",
 ]
 
 [[package]]

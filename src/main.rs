@@ -27,6 +27,8 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Watch a given process, which must have set up at least one
+    /// perpetuo.StallTracker.
     #[command(arg_required_else_help = true)]
     Watch { pid: u32 },
 }

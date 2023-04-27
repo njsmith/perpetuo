@@ -16,7 +16,7 @@ name = "perpetuo"
 [dependencies]
 anyhow = "1.0.70"
 bytemuck = { version = "1.13.1", features = ["derive", "zeroable_atomics"] }
-clap = { version = "4.2.2", features = ["derive"] }
+clap = { version = "4.2.2", features = ["derive", "wrap_help"] }
 indoc = "2.0.1"
 memmap = "0.7.0"
 once_cell = "1.17.1"
