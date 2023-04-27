@@ -276,7 +276,7 @@ impl PerpetuoProc {
                     id,
                     name,
                     thread_hint: current.metadata.thread_hint,
-                    duration: now - snapshot.last_updated,
+                    duration: now.duration_since(snapshot.last_updated),
                 })
             } else {
                 snapshot.stall_tracker = current;
