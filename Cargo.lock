@@ -1400,7 +1400,7 @@ checksum = "a5996294f19bd3aae0453a862ad728f60e6600695733dd5df01da90c54363a3c"
 [[package]]
 name = "remoteprocess"
 version = "0.4.11"
-source = "git+https://github.com/njsmith/remoteprocess?branch=static-link#d20dc9e8b2b83f113f15e6a8b40d11102f7b6f4f"
+source = "git+https://github.com/njsmith/remoteprocess?branch=static-link#02c6f11ec5a1058fcdd4989ab9e63ea2df1a7be6"
 dependencies = [
  "addr2line",
  "goblin 0.6.1",
