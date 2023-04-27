@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
@@ -14,6 +14,15 @@ struct Cli {
     command: Commands,
     #[arg(short, long, value_name = "SECONDS", default_value_t = 0.5)]
     poll_interval: f64,
+    /// We'll print at most one traceback per this many seconds. This reduces spam, and
+    /// also reduces interference with the monitored process, since each traceback
+    /// requires briefly pausing the process. And in some specific cases, this might
+    /// cause system calls to be restarted, which might cause timeouts to be reset, and
+    /// thus extend stalls...
+    ///
+    /// Hypothetically.
+    #[arg(long, value_name = "SECONDS", default_value_t = 30.0)]
+    traceback_interval: f64,
 }
 
 #[derive(Subcommand, Debug)]
@@ -24,15 +33,16 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let poll_interval = std::time::Duration::from_secs_f64(cli.poll_interval);
+    let poll_interval = Duration::from_secs_f64(cli.poll_interval);
+    let traceback_interval = Duration::from_secs_f64(cli.traceback_interval);
 
     match cli.command {
-        Commands::Watch { pid } => watch_process(pid, poll_interval)?,
+        Commands::Watch { pid } => watch_process(pid, poll_interval, traceback_interval)?,
     }
     Ok(())
 }
 
-fn watch_process(pid: u32, poll_interval: Duration) -> Result<()> {
+fn watch_process(pid: u32, poll_interval: Duration, traceback_interval: Duration) -> Result<()> {
     let mut config = py_spy::Config::default();
     // We only collect a stack trace if we've already determined that the program is
     // misbehaving, so we're happy to pay some extra cost to get more detailed
@@ -81,9 +91,10 @@ fn watch_process(pid: u32, poll_interval: Duration) -> Result<()> {
     }
     let mut proc = result?;
     eprintln!("Successfully monitoring pid {pid}");
+    let mut next_traceback = Instant::now();
     loop {
         std::thread::sleep(poll_interval);
-        if let Err(err) = check_once(&mut proc) {
+        if let Err(err) = check_once(&mut proc, &mut next_traceback, traceback_interval) {
             if proc.spy.process.exe().is_err() {
                 eprintln!("Process {} has exited", pid);
                 return Ok(());
@@ -108,12 +119,22 @@ fn permission_denied(err: &anyhow::Error) -> bool {
     })
 }
 
-fn check_once(proc: &mut PerpetuoProc) -> Result<()> {
+fn check_once(
+    proc: &mut PerpetuoProc,
+    next_traceback: &mut Instant,
+    traceback_interval: Duration,
+) -> Result<()> {
     for stall in proc.check_stalls()? {
         eprintln!(
             "{} stall detected in process {} for at least {:?}",
             stall.name, proc.spy.process.pid, stall.duration
         );
+        let now = Instant::now();
+        if now < *next_traceback {
+            eprintln!("  (no traceback due to rate-limiting)");
+            continue;
+        }
+        *next_traceback = now + traceback_interval;
         eprintln!("command line: {:?}", proc.spy.process.cmdline()?);
         let traces = proc.spy.get_stack_traces()?;
         let mut relevant = Vec::new();
