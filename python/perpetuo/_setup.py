@@ -33,8 +33,8 @@ def instrument_gil() -> None:
     if GIL_STALLTRACKER is not None:
         return
     if hasattr(sys, "_set_stall_counter"):
-        GILL_STALLTRACKER = StallTracker("GIL", "gil")
-        sys._set_stall_counter(GILL_STALLTRACKER.counter_address())
+        GIL_STALLTRACKER = StallTracker("GIL", "gil")
+        sys._set_stall_counter(GIL_STALLTRACKER.counter_address())
     else:
         raise RuntimeError(
             "This Python was not built with the perpetuo GIL instrumentation patch"
