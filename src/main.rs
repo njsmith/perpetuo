@@ -12,8 +12,17 @@ use perpetuo::shmem::PerpetuoProc;
 struct Cli {
     #[command(subcommand)]
     command: Commands,
-    #[arg(short, long, value_name = "SECONDS", default_value = "0.5", value_parser=parse_duration)]
+    /// How often we inspect the target process to check for progress.
+    #[arg(long, value_name = "SECONDS", default_value = "0.05", value_parser=parse_duration)]
     poll_interval: Duration,
+    /// How long a stall is required to trigger a traceback.
+    ///
+    /// We only alert if we issue two polls that both see the same stall and are at
+    /// least alert-interval apart. So you want poll-interval to be smaller than
+    /// alert-interval.
+    #[arg(long, value_name = "SECONDS", default_value = "0.2", value_parser=parse_duration)]
+    alert_interval: Duration,
+
     /// We'll print at most one traceback per this many seconds. This reduces spam, and
     /// also reduces interference with the monitored process, since each traceback
     /// requires briefly pausing the process. And in some specific cases, this might
@@ -22,7 +31,7 @@ struct Cli {
     ///
     /// Hypothetically.
     #[arg(long, value_name = "SECONDS", default_value = "30.0", value_parser=parse_duration)]
-    traceback_interval: Duration,
+    traceback_suppress: Duration,
 
     // This is super confusing -- the options are intentionally swapped. For reasons
     // (such as they are) see: https://jwodder.github.io/kbits/posts/clap-bool-negate/
@@ -112,7 +121,12 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
     let mut next_traceback = Instant::now();
     loop {
         std::thread::sleep(cli.poll_interval);
-        if let Err(err) = check_once(&mut proc, &mut next_traceback, cli.traceback_interval) {
+        if let Err(err) = check_once(
+            &mut proc,
+            &mut next_traceback,
+            cli.alert_interval,
+            cli.traceback_suppress,
+        ) {
             if proc.spy.process.exe().is_err() {
                 eprintln!("Process {} has exited", pid);
                 return Ok(());
@@ -140,9 +154,10 @@ fn permission_denied(err: &anyhow::Error) -> bool {
 fn check_once(
     proc: &mut PerpetuoProc,
     next_traceback: &mut Instant,
+    alert_interval: Duration,
     traceback_interval: Duration,
 ) -> Result<()> {
-    for stall in proc.check_stalls()? {
+    for stall in proc.check_stalls(alert_interval)? {
         eprintln!(
             "{} stall detected in process {} for at least {:?}",
             stall.name, proc.spy.process.pid, stall.duration

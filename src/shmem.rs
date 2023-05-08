@@ -251,7 +251,7 @@ impl PerpetuoProc {
         bail!("Couldn't find perpetuo instrumentation (did you enable it?)");
     }
 
-    pub fn check_stalls(&mut self) -> Result<Vec<StallReport>> {
+    pub fn check_stalls(&mut self, alert_interval: Duration) -> Result<Vec<StallReport>> {
         let now = Instant::now();
         let current_slots = self
             .spy
@@ -266,18 +266,23 @@ impl PerpetuoProc {
                 && current.count.load(Ordering::Relaxed)
                     == snapshot.stall_tracker.count.load(Ordering::Relaxed)
             {
-                // stall detected!
-                let name = self
-                    .spy
-                    .process
-                    .copy(current.metadata.name_ptr, current.metadata.name_len)?;
-                let name = String::from_utf8(name)?;
-                stalls.push(StallReport {
-                    id,
-                    name,
-                    thread_hint: current.metadata.thread_hint,
-                    duration: now.duration_since(snapshot.last_updated),
-                })
+                if now.duration_since(snapshot.last_updated) >= alert_interval {
+                    // stall detected!
+                    let name = self
+                        .spy
+                        .process
+                        .copy(current.metadata.name_ptr, current.metadata.name_len)?;
+                    let name = String::from_utf8(name)?;
+                    stalls.push(StallReport {
+                        id,
+                        name,
+                        thread_hint: current.metadata.thread_hint,
+                        duration: now.duration_since(snapshot.last_updated),
+                    })
+                } else {
+                    // stall in progress, but it hasn't hit our alerting threshold
+                    // yet... leave the snapshot alone so we can continue tracking it.
+                }
             } else {
                 snapshot.stall_tracker = current;
                 snapshot.last_updated = now;

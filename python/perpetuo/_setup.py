@@ -10,17 +10,27 @@ WATCHER: subprocess.Popen | None = None
 GIL_STALLTRACKER: StallTracker | None = None
 
 
-def start_watcher(*, poll_interval: float | None = None, print_locals=True) -> None:
+def start_watcher(
+    *,
+    poll_interval: float | None = None,
+    alert_interval: float | None = None,
+    traceback_suppress: float | None = None,
+    print_locals: bool = True,
+) -> None:
     global WATCHER
     if WATCHER is None:
         args = []
         if poll_interval is not None:
             args += ["--poll-interval", str(poll_interval)]
+        if alert_interval is not None:
+            args += ["--alert-interval", str(alert_interval)]
+        if traceback_suppress is not None:
+            args += ["--traceback-suppress", str(alert_interval)]
         if print_locals:
             args += ["--print-locals"]
         else:
             args += ["--no-print-locals"]
-        subprocess.Popen(["perpetuo", "watch", str(os.getpid())] + poll_args)
+        subprocess.Popen(["perpetuo", *args, "watch", str(os.getpid())])
 
 
 def stop_watcher() -> None:
