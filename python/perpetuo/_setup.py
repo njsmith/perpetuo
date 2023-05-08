@@ -47,6 +47,11 @@ def instrument_gil() -> None:
         return
     if hasattr(sys, "_set_stall_counter"):
         GIL_STALLTRACKER = StallTracker("GIL", "gil")
+        # Conceptually, sys._set_stall_counter holds a reference to this object, so we
+        # do an intentionally unbalanced incref here. In particular, this avoids the
+        # StallTracker getting GC'ed when the interpreter shuts down and clears all
+        # module globals, while it's actually still in use.
+        GIL_STALLTRACKER._leak()
         sys._set_stall_counter(GIL_STALLTRACKER.counter_address())
     else:
         raise RuntimeError(

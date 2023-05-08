@@ -54,6 +54,10 @@ impl PyStallTracker {
         })
     }
 
+    fn _leak(this: PyRef<'_, Self>, py: Python) {
+        std::mem::forget(this.into_py(py));
+    }
+
     fn go_active(&self) -> PyResult<()> {
         let stall_tracker = rustify(&self)?;
         if stall_tracker.is_active() {
