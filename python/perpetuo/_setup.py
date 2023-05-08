@@ -10,13 +10,16 @@ WATCHER: subprocess.Popen | None = None
 GIL_STALLTRACKER: StallTracker | None = None
 
 
-def start_watcher(*, poll_interval: float | None = None) -> None:
+def start_watcher(*, poll_interval: float | None = None, print_locals=True) -> None:
     global WATCHER
     if WATCHER is None:
+        args = []
         if poll_interval is not None:
-            poll_args = ["--poll-interval", str(poll_interval)]
+            args += ["--poll-interval", str(poll_interval)]
+        if print_locals:
+            args += ["--print-locals"]
         else:
-            poll_args = []
+            args += ["--no-print-locals"]
         subprocess.Popen(["perpetuo", "watch", str(os.getpid())] + poll_args)
 
 
@@ -79,7 +82,7 @@ def instrument_trio() -> None:
     trio.lowlevel.add_instrument(TrioStallInstrument())
 
 
-def dwim(*, poll_interval: float | None = None) -> list[str]:
+def dwim(**kwargs) -> list[str]:
     did = []
 
     try:
@@ -98,7 +101,7 @@ def dwim(*, poll_interval: float | None = None) -> list[str]:
             did.append("instrumented Trio")
 
     if did:
-        start_watcher(poll_interval=poll_interval)
+        start_watcher(**kwargs)
         did.append("started out of process watcher")
 
     return did
