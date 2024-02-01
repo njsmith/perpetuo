@@ -25,6 +25,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
+          name: pypi-sdist
           path: ./dist/*.tar.gz
 
   # XX FIXME we ought to build the wheels *from* the sdist...
@@ -69,6 +70,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           path: ./wheelhouse/*.whl
+          name: pypi-wheel-${{ matrix.os }}
 
   publish:
     name: Publish to pypi
@@ -81,9 +83,10 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: artifact
+          pattern: "pypi-*"
+          merge-multiple: true
           path: dist
 
       - uses: pypa/gh-action-pypi-publish@release/v1
