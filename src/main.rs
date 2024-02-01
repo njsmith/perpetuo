@@ -186,7 +186,9 @@ fn check_once(
             }
         }
         if !rest.is_empty() {
-            eprintln!("Other threads (probably not responsible):\n");
+            if !relevant.is_empty() {
+                eprintln!("Other threads (probably not responsible):\n");
+            }
             for trace in &rest {
                 dump_stacktrace(trace);
             }
