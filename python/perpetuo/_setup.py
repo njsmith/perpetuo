@@ -10,6 +10,21 @@ WATCHER: subprocess.Popen | None = None
 GIL_STALLTRACKER: StallTracker | None = None
 
 
+PR_SET_PTRACER = 0x59616D61
+
+
+def linux_set_ptracer(pid):
+    import ctypes
+
+    elf_global_namespace = ctypes.CDLL(None, use_errno=True)
+    res = elf_global_namespace.prctl(
+        PR_SET_PTRACER, *[ctypes.c_ulong(i) for i in [pid, 0, 0, 0]]
+    )
+    if res < 0:
+        errno = ctypes.get_errno()
+        raise OSError(errno, os.strerror(errno))
+
+
 def start_watcher(
     *,
     poll_interval: float | None = None,
@@ -30,7 +45,12 @@ def start_watcher(
             args += ["--print-locals"]
         else:
             args += ["--no-print-locals"]
-        subprocess.Popen(["perpetuo", *args, "watch", str(os.getpid())])
+        process = subprocess.Popen(["perpetuo", *args, "watch", str(os.getpid())])
+        if sys.platform == "linux":
+            try:
+                linux_set_ptracer(process.pid)
+            except OSError:
+                print()
 
 
 def stop_watcher() -> None:
