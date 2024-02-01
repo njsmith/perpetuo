@@ -47,7 +47,7 @@ impl ThreadHint {
         if self.is_gil() {
             trace.owns_gil
         } else {
-            trace.thread_id == self.0.try_into().unwrap()
+            trace.thread_id == TryInto::<u64>::try_into(self.0).unwrap()
         }
     }
 }
@@ -261,7 +261,7 @@ impl PerpetuoProc {
         let mut stalls = Vec::new();
 
         for (id, current) in current_slots.into_iter().enumerate() {
-            let mut snapshot = &mut self.last_updates[id];
+            let snapshot = &mut self.last_updates[id];
             if current.is_active()
                 && current.count.load(Ordering::Relaxed)
                     == snapshot.stall_tracker.count.load(Ordering::Relaxed)
