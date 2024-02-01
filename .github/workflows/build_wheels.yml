@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.12.3
+        uses: pypa/cibuildwheel@v2.16.5
         env:
           CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
           # We build abi3 wheels, so we only want to build once, on the lowest-supported-python
