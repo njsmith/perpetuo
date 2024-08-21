@@ -1,4 +1,5 @@
 use std::time::{Duration, Instant};
+use std::collections::HashMap;
 
 use anyhow::{bail, Result};
 use clap::{ArgAction, Parser, Subcommand};
@@ -6,6 +7,7 @@ use indoc::indoc;
 use py_spy::StackTrace;
 
 use perpetuo::shmem::PerpetuoProc;
+use perpetuo::log::{log_json, Severity};
 
 #[derive(Parser, Debug)]
 #[command(about = "A stall tracker for Python", long_about = None)]
@@ -78,7 +80,9 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
         config.dump_locals = 0;
     }
     config.full_filenames = true;
-    eprintln!("Attempting to monitor pid {pid}...");
+    let mut additional_info = HashMap::new();
+    additional_info.insert("pid".to_string(), pid.to_string());
+    log_json(Severity::Info, &format!("Attempting to monitor pid {pid}..."), Some(&additional_info));
     // let mut proc = loop {
     //     if let Some(proc) = PerpetuoProc::new(pid, &config)? {
     //         break proc;
@@ -117,7 +121,7 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
         }
     }
     let mut proc = result?;
-    eprintln!("Successfully monitoring pid {pid}");
+    log_json(Severity::Info, &format!("Successfully monitoring pid {pid}"), Some(&additional_info));
     let mut next_traceback = Instant::now();
     loop {
         std::thread::sleep(cli.poll_interval);
@@ -128,7 +132,7 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
             cli.traceback_suppress,
         ) {
             if proc.spy.process.exe().is_err() {
-                eprintln!("Process {} has exited", pid);
+                log_json(Severity::Info, &format!("Process {} has exited", pid), Some(&additional_info));
                 return Ok(());
             }
             return Err(err);
@@ -158,17 +162,22 @@ fn check_once(
     traceback_interval: Duration,
 ) -> Result<()> {
     for stall in proc.check_stalls(alert_interval)? {
-        eprintln!(
-            "{} stall detected in process {} for at least {:?}",
-            stall.name, proc.spy.process.pid, stall.duration
+        let mut additional_info = HashMap::new();
+        additional_info.insert("name".to_string(), stall.name.to_string());
+        additional_info.insert("pid".to_string(), proc.spy.process.pid.to_string());
+        additional_info.insert("duration".to_string(), format!("{:?}", stall.duration));
+        log_json(
+            Severity::Warning,
+            &format!("{} stall detected in process {} for at least {:?}", stall.name, proc.spy.process.pid, stall.duration),
+            Some(&additional_info),
         );
         let now = Instant::now();
         if now < *next_traceback {
-            eprintln!("  (no traceback due to rate-limiting)");
+            log_json(Severity::Warning, "  (no traceback due to rate-limiting)", None);
             continue;
         }
         *next_traceback = now + traceback_interval;
-        eprintln!("command line: {:?}", proc.spy.process.cmdline()?);
+        log_json(Severity::Info, &format!("command line: {:?}", proc.spy.process.cmdline()?), None);
         let traces = proc.spy.get_stack_traces()?;
         let mut relevant = Vec::new();
         let mut rest = Vec::new();
@@ -180,14 +189,14 @@ fn check_once(
             }
         }
         if !relevant.is_empty() {
-            eprintln!("This thread is probably responsible:\n");
+            log_json(Severity::Warning, "This thread is probably responsible:", Some(&additional_info));
             for trace in &relevant {
                 dump_stacktrace(trace);
             }
         }
         if !rest.is_empty() {
             if !relevant.is_empty() {
-                eprintln!("Other threads (probably not responsible):\n");
+                log_json(Severity::Info, "Other threads (probably not responsible):", Some(&additional_info));
             }
             for trace in &rest {
                 dump_stacktrace(trace);
@@ -198,23 +207,37 @@ fn check_once(
 }
 
 fn dump_stacktrace(trace: &StackTrace) {
-    eprintln!(
-        "    Thread {:x} ({}{})",
-        trace.thread_id,
-        trace.status_str(),
-        if trace.owns_gil { ", holding GIL" } else { "" }
+    log_json(
+        Severity::Info,
+        &format!(
+            "    Thread {:x} ({}{})",
+            trace.thread_id,
+            trace.status_str(),
+            if trace.owns_gil { ", holding GIL" } else { "" }
+        ),
+        None,
     );
+
     for frame in trace.frames.iter().rev() {
-        eprintln!("        {} ({}:{})", frame.name, frame.filename, frame.line);
+        log_json(
+            Severity::Info,
+            &format!("        {} ({}:{})", frame.name, frame.filename, frame.line),
+            None,
+        );
+
         if let Some(locals) = &frame.locals {
             for local in locals {
-                eprintln!(
-                    "            {} = {}",
-                    local.name,
-                    local.repr.as_deref().unwrap_or("?")
+                log_json(
+                    Severity::Info,
+                    &format!(
+                        "            {} = {}",
+                        local.name,
+                        local.repr.as_deref().unwrap_or("?")
+                    ),
+                    None,
                 );
             }
         }
     }
-    eprintln!("");
+    log_json(Severity::Info, "", None);
 }

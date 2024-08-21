@@ -1,4 +1,5 @@
 pub mod shmem;
+pub mod log;
 
 use crate::shmem::{alloc_slot, release_slot, StallTracker, ThreadHint, GIL};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
