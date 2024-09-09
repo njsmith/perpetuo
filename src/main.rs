@@ -175,7 +175,7 @@ fn check_once(
         );
         let now = Instant::now();
         if now < *next_traceback {
-            log_json(Severity::Warning, "  (no traceback due to rate-limiting)", None, None);
+            log_json(Severity::Warning, &format!("No traceback due to rate-limiting for pid {}", proc.spy.process.pid), Some(&additional_info), None);
             continue;
         }
         *next_traceback = now + traceback_interval;
