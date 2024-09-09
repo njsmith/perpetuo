@@ -5,6 +5,7 @@ use anyhow::{bail, Result};
 use clap::{ArgAction, Parser, Subcommand};
 use indoc::indoc;
 use py_spy::StackTrace;
+use serde_json::Value;
 
 use perpetuo::shmem::PerpetuoProc;
 use perpetuo::log::{log_json, Severity};
@@ -82,7 +83,7 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
     config.full_filenames = true;
     let mut additional_info = HashMap::new();
     additional_info.insert("pid".to_string(), pid.to_string());
-    log_json(Severity::Info, &format!("Attempting to monitor pid {pid}..."), Some(&additional_info));
+    log_json(Severity::Info, &format!("Attempting to monitor pid {pid}..."), Some(&additional_info), None);
     // let mut proc = loop {
     //     if let Some(proc) = PerpetuoProc::new(pid, &config)? {
     //         break proc;
@@ -121,7 +122,7 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
         }
     }
     let mut proc = result?;
-    log_json(Severity::Info, &format!("Successfully monitoring pid {pid}"), Some(&additional_info));
+    log_json(Severity::Info, &format!("Successfully monitoring pid {pid}"), Some(&additional_info), None);
     let mut next_traceback = Instant::now();
     loop {
         std::thread::sleep(cli.poll_interval);
@@ -132,7 +133,7 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
             cli.traceback_suppress,
         ) {
             if proc.spy.process.exe().is_err() {
-                log_json(Severity::Info, &format!("Process {} has exited", pid), Some(&additional_info));
+                log_json(Severity::Info, &format!("Process {} has exited", pid), Some(&additional_info), None);
                 return Ok(());
             }
             return Err(err);
@@ -170,14 +171,15 @@ fn check_once(
             Severity::Warning,
             &format!("{} stall detected in process {} for at least {:?}", stall.name, proc.spy.process.pid, stall.duration),
             Some(&additional_info),
+            None,
         );
         let now = Instant::now();
         if now < *next_traceback {
-            log_json(Severity::Warning, "  (no traceback due to rate-limiting)", None);
+            log_json(Severity::Warning, "  (no traceback due to rate-limiting)", None, None);
             continue;
         }
         *next_traceback = now + traceback_interval;
-        log_json(Severity::Info, &format!("command line: {:?}", proc.spy.process.cmdline()?), None);
+        log_json(Severity::Info, &format!("command line: {:?}", proc.spy.process.cmdline()?), None, None);
         let traces = proc.spy.get_stack_traces()?;
         let mut relevant = Vec::new();
         let mut rest = Vec::new();
@@ -189,14 +191,14 @@ fn check_once(
             }
         }
         if !relevant.is_empty() {
-            log_json(Severity::Warning, "This thread is probably responsible:", Some(&additional_info));
+            log_json(Severity::Warning, "This thread is probably responsible:", Some(&additional_info), None);
             for trace in &relevant {
                 dump_stacktrace(trace);
             }
         }
         if !rest.is_empty() {
             if !relevant.is_empty() {
-                log_json(Severity::Info, "Other threads (probably not responsible):", Some(&additional_info));
+                log_json(Severity::Info, "Other threads (probably not responsible):", Some(&additional_info), None);
             }
             for trace in &rest {
                 dump_stacktrace(trace);
@@ -207,37 +209,42 @@ fn check_once(
 }
 
 fn dump_stacktrace(trace: &StackTrace) {
+    let mut frames = Vec::new();
+    for frame in trace.frames.iter().rev() {
+        let mut frame_info = serde_json::json!({
+            "name": frame.name,
+            "filename": frame.filename,
+            "line": frame.line,
+        });
+
+        if let Some(locals) = &frame.locals {
+            let locals_info: Vec<Value> = locals
+                .iter()
+                .map(|local| {
+                    serde_json::json!({
+                        "name": local.name,
+                        "value": local.repr.as_deref().unwrap_or("?")
+                    })
+                })
+                .collect();
+            frame_info["locals"] = serde_json::json!(locals_info);
+        }
+
+        frames.push(frame_info);
+    }
+
+    let mut additional_info = HashMap::new();
+    additional_info.insert("thread_id".to_string(), format!("{:x}", trace.thread_id));
+    additional_info.insert("status".to_string(), trace.status_str().to_string());
+    additional_info.insert("owns_gil".to_string(), trace.owns_gil.to_string());
+
     log_json(
         Severity::Info,
         &format!(
-            "    Thread {:x} ({}{})",
+            "Thread {:x}",
             trace.thread_id,
-            trace.status_str(),
-            if trace.owns_gil { ", holding GIL" } else { "" }
         ),
-        None,
+        Some(&additional_info),
+        Some(&frames),
     );
-
-    for frame in trace.frames.iter().rev() {
-        log_json(
-            Severity::Info,
-            &format!("        {} ({}:{})", frame.name, frame.filename, frame.line),
-            None,
-        );
-
-        if let Some(locals) = &frame.locals {
-            for local in locals {
-                log_json(
-                    Severity::Info,
-                    &format!(
-                        "            {} = {}",
-                        local.name,
-                        local.repr.as_deref().unwrap_or("?")
-                    ),
-                    None,
-                );
-            }
-        }
-    }
-    log_json(Severity::Info, "", None);
 }
