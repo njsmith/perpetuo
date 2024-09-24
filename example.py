@@ -35,7 +35,7 @@ async def main():
     print(f"{thread.ident=} {thread.native_id=}")
     async with trio.open_nursery() as nursery:
         nursery.start_soon(
-            partial(trio.to_thread.run_sync, gil_naughty)
+            partial(trio.to_thread.run_sync, gil_naughty, cancellable=True)
         )
         await foo()
 
