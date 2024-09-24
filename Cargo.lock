@@ -997,7 +997,7 @@ checksum = "19b17cddbe7ec3f8bc800887bab5e717348c95ea2ca0b1bf0837fb964dc67099"
 
 [[package]]
 name = "perpetuo"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "bytemuck",
