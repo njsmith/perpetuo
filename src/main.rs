@@ -1,11 +1,12 @@
 use std::time::{Duration, Instant};
+use std::collections::HashMap;
 
 use anyhow::{bail, Result};
 use clap::{ArgAction, Parser, Subcommand};
 use indoc::indoc;
-use py_spy::StackTrace;
 
 use perpetuo::shmem::PerpetuoProc;
+use perpetuo::log::{log, dump_stacktrace, Severity};
 
 #[derive(Parser, Debug)]
 #[command(about = "A stall tracker for Python", long_about = None)]
@@ -41,6 +42,10 @@ struct Cli {
     /// Print local variable values in tracebacks [default]
     #[clap(long = "print-locals", overrides_with = "print_locals")]
     _no_print_locals: bool,
+
+    /// Output logs in JSON format
+    #[clap(long = "json-mode", action = ArgAction::SetTrue)]
+    json_mode: bool,
 }
 
 fn parse_duration(s: &str) -> std::result::Result<Duration, String> {
@@ -78,7 +83,11 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
         config.dump_locals = 0;
     }
     config.full_filenames = true;
-    eprintln!("Attempting to monitor pid {pid}...");
+    let json_mode = cli.json_mode;
+
+    let mut additional_info = HashMap::new();
+    additional_info.insert("pid".to_string(), pid.to_string());
+    log(Severity::Info, &format!("Attempting to monitor pid {pid}..."), Some(&additional_info), json_mode);
     // let mut proc = loop {
     //     if let Some(proc) = PerpetuoProc::new(pid, &config)? {
     //         break proc;
@@ -117,7 +126,7 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
         }
     }
     let mut proc = result?;
-    eprintln!("Successfully monitoring pid {pid}");
+    log(Severity::Info, &format!("Successfully monitoring pid {pid}"), Some(&additional_info), json_mode);
     let mut next_traceback = Instant::now();
     loop {
         std::thread::sleep(cli.poll_interval);
@@ -126,9 +135,10 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
             &mut next_traceback,
             cli.alert_interval,
             cli.traceback_suppress,
+            json_mode,
         ) {
             if proc.spy.process.exe().is_err() {
-                eprintln!("Process {} has exited", pid);
+                log(Severity::Info, &format!("Process {} has exited", pid), Some(&additional_info), json_mode);
                 return Ok(());
             }
             return Err(err);
@@ -156,19 +166,26 @@ fn check_once(
     next_traceback: &mut Instant,
     alert_interval: Duration,
     traceback_interval: Duration,
+    json_mode: bool,
 ) -> Result<()> {
     for stall in proc.check_stalls(alert_interval)? {
-        eprintln!(
-            "{} stall detected in process {} for at least {:?}",
-            stall.name, proc.spy.process.pid, stall.duration
+        let mut additional_info = HashMap::new();
+        additional_info.insert("name".to_string(), stall.name.to_string());
+        additional_info.insert("pid".to_string(), proc.spy.process.pid.to_string());
+        additional_info.insert("duration".to_string(), format!("{:?}", stall.duration));
+        log(
+            Severity::Warning,
+            &format!("{} stall detected in process {} for at least {:?}", stall.name, proc.spy.process.pid, stall.duration),
+            Some(&additional_info),
+            json_mode,
         );
         let now = Instant::now();
         if now < *next_traceback {
-            eprintln!("  (no traceback due to rate-limiting)");
+            log(Severity::Warning, &format!("No traceback due to rate-limiting for pid {}", proc.spy.process.pid), Some(&additional_info), json_mode);
             continue;
         }
         *next_traceback = now + traceback_interval;
-        eprintln!("command line: {:?}", proc.spy.process.cmdline()?);
+        log(Severity::Info, &format!("command line: {:?}", proc.spy.process.cmdline()?), None, json_mode);
         let traces = proc.spy.get_stack_traces()?;
         let mut relevant = Vec::new();
         let mut rest = Vec::new();
@@ -180,41 +197,20 @@ fn check_once(
             }
         }
         if !relevant.is_empty() {
-            eprintln!("This thread is probably responsible:\n");
+            log(Severity::Warning, "This thread is probably responsible:", Some(&additional_info), json_mode);
             for trace in &relevant {
-                dump_stacktrace(trace);
+                dump_stacktrace(trace, json_mode);
             }
         }
         if !rest.is_empty() {
             if !relevant.is_empty() {
-                eprintln!("Other threads (probably not responsible):\n");
+                log(Severity::Info, "Other threads (probably not responsible):", Some(&additional_info), json_mode);
             }
             for trace in &rest {
-                dump_stacktrace(trace);
+                dump_stacktrace(trace, json_mode);
             }
         }
     }
     Ok(())
 }
 
-fn dump_stacktrace(trace: &StackTrace) {
-    eprintln!(
-        "    Thread {:x} ({}{})",
-        trace.thread_id,
-        trace.status_str(),
-        if trace.owns_gil { ", holding GIL" } else { "" }
-    );
-    for frame in trace.frames.iter().rev() {
-        eprintln!("        {} ({}:{})", frame.name, frame.filename, frame.line);
-        if let Some(locals) = &frame.locals {
-            for local in locals {
-                eprintln!(
-                    "            {} = {}",
-                    local.name,
-                    local.repr.as_deref().unwrap_or("?")
-                );
-            }
-        }
-    }
-    eprintln!("");
-}

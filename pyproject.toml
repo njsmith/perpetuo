@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel", "setuptools-rust"]
 
 [project]
 name = "perpetuo"
-version = "0.5.1"
+version = "0.6.0"
 authors = [
   {name = "Nathaniel J. Smith", email = "njs@pobox.com"},
 ]
