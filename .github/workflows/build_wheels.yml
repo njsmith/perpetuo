@@ -50,7 +50,7 @@ jobs:
           # about how this should be done that we'd need to work with/around.
           CIBW_SKIP: "*musllinux*"
           CIBW_BEFORE_ALL_LINUX: "bash ./prep-manylinux-container.sh"
-          CIBW_BEFORE_ALL_MACOS: "rustup target add aarch64-apple-darwin"
+          CIBW_BEFORE_ALL_MACOS: "rustup target add aarch64-apple-darwin x86_64-apple-darwin"
           CIBW_ENVIRONMENT: 'PATH="$HOME/.cargo/bin:$PATH"'
           CIBW_ARCHS_LINUX: "x86_64"
           CIBW_ARCHS_WINDOWS: "AMD64"
