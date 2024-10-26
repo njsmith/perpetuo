@@ -31,6 +31,7 @@ def start_watcher(
     alert_interval: float | None = None,
     traceback_suppress: float | None = None,
     print_locals: bool = True,
+    json_mode: bool = True,
 ) -> None:
     global WATCHER
     if WATCHER is None:
@@ -43,6 +44,8 @@ def start_watcher(
             args += ["--traceback-suppress", str(alert_interval)]
         if print_locals:
             args += ["--print-locals"]
+        if json_mode:
+            args += ["--json-mode"]
         else:
             args += ["--no-print-locals"]
         process = subprocess.Popen(["perpetuo", *args, "watch", str(os.getpid())])
