@@ -53,6 +53,12 @@ downloaded here:
 
   https://github.com/python/cpython/compare/3.10...njsmith:cpython:njs/perpetuo-gil.diff
 
+One way to install a patched python is via pyenv:
+
+```bash
+pyenv install --patch 3.10 < <(curl -sSL https://github.com/python/cpython/compare/3.10...njsmith:cpython:njs/perpetuo-gil.diff)
+```
+
 
 ## Bonus
 
