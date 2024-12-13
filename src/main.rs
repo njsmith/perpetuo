@@ -1,12 +1,12 @@
-use std::time::{Duration, Instant};
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Result};
 use clap::{ArgAction, Parser, Subcommand};
 use indoc::indoc;
 
+use perpetuo::log::{convert_stack, log, log_with_details, Severity, StallDetails};
 use perpetuo::shmem::PerpetuoProc;
-use perpetuo::log::{log, dump_stacktrace, Severity};
 
 #[derive(Parser, Debug)]
 #[command(about = "A stall tracker for Python", long_about = None)]
@@ -87,7 +87,12 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
 
     let mut additional_info = HashMap::new();
     additional_info.insert("pid".to_string(), pid.to_string());
-    log(Severity::Info, &format!("Attempting to monitor pid {pid}..."), Some(&additional_info), json_mode);
+    log(
+        Severity::Info,
+        &format!("Attempting to monitor pid {pid}..."),
+        &additional_info,
+        json_mode,
+    );
     // let mut proc = loop {
     //     if let Some(proc) = PerpetuoProc::new(pid, &config)? {
     //         break proc;
@@ -107,7 +112,7 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
                 pid
             );
         }
-        if cfg!(target_os = "linux") && permission_denied(&err) {
+        if cfg!(target_os = "linux") && permission_denied(err) {
             bail!(
                 indoc! {"
                     Permission denied: maybe you have ptrace locked down? Try:
@@ -126,7 +131,12 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
         }
     }
     let mut proc = result?;
-    log(Severity::Info, &format!("Successfully monitoring pid {pid}"), Some(&additional_info), json_mode);
+    log(
+        Severity::Info,
+        &format!("Successfully monitoring pid {pid}"),
+        &additional_info,
+        json_mode,
+    );
     let mut next_traceback = Instant::now();
     loop {
         std::thread::sleep(cli.poll_interval);
@@ -138,7 +148,12 @@ fn watch_process(pid: u32, cli: &Cli) -> Result<()> {
             json_mode,
         ) {
             if proc.spy.process.exe().is_err() {
-                log(Severity::Info, &format!("Process {} has exited", pid), Some(&additional_info), json_mode);
+                log(
+                    Severity::Info,
+                    &format!("Process {} has exited", pid),
+                    &additional_info,
+                    json_mode,
+                );
                 return Ok(());
             }
             return Err(err);
@@ -172,45 +187,54 @@ fn check_once(
         let mut additional_info = HashMap::new();
         additional_info.insert("name".to_string(), stall.name.to_string());
         additional_info.insert("pid".to_string(), proc.spy.process.pid.to_string());
-        additional_info.insert("duration".to_string(), format!("{:?}", stall.duration));
-        log(
-            Severity::Warning,
-            &format!("{} stall detected in process {} for at least {:?}", stall.name, proc.spy.process.pid, stall.duration),
-            Some(&additional_info),
-            json_mode,
-        );
+        let length_ms = stall.duration.as_secs_f64() * 1000.0;
+
         let now = Instant::now();
         if now < *next_traceback {
-            log(Severity::Warning, &format!("No traceback due to rate-limiting for pid {}", proc.spy.process.pid), Some(&additional_info), json_mode);
+            let details = StallDetails {
+                length_ms,
+                relevant_traces: vec![],
+                other_traces: vec![],
+                cmdline: vec![],
+                rate_limited: true,
+            };
+            log_with_details(
+                Severity::Warning,
+                "Stall detected",
+                &additional_info,
+                Some(&details),
+                json_mode,
+            );
             continue;
         }
+
+        let cmdline = proc.spy.process.cmdline()?;
         *next_traceback = now + traceback_interval;
-        log(Severity::Info, &format!("command line: {:?}", proc.spy.process.cmdline()?), None, json_mode);
+
         let traces = proc.spy.get_stack_traces()?;
-        let mut relevant = Vec::new();
-        let mut rest = Vec::new();
+        let mut relevant_traces = Vec::new();
+        let mut other_traces = Vec::new();
         for trace in traces {
             if stall.thread_hint.relevant(&trace) {
-                relevant.push(trace);
+                relevant_traces.push(convert_stack(&trace));
             } else {
-                rest.push(trace);
+                other_traces.push(convert_stack(&trace));
             }
         }
-        if !relevant.is_empty() {
-            log(Severity::Warning, "This thread is probably responsible:", Some(&additional_info), json_mode);
-            for trace in &relevant {
-                dump_stacktrace(trace, json_mode);
-            }
-        }
-        if !rest.is_empty() {
-            if !relevant.is_empty() {
-                log(Severity::Info, "Other threads (probably not responsible):", Some(&additional_info), json_mode);
-            }
-            for trace in &rest {
-                dump_stacktrace(trace, json_mode);
-            }
-        }
+        let details = StallDetails {
+            length_ms,
+            relevant_traces,
+            other_traces,
+            cmdline,
+            rate_limited: false,
+        };
+        log_with_details(
+            Severity::Warning,
+            "Stall detected",
+            &additional_info,
+            Some(&details),
+            json_mode,
+        );
     }
     Ok(())
 }
-

@@ -1,5 +1,5 @@
-pub mod shmem;
 pub mod log;
+pub mod shmem;
 
 use crate::shmem::{alloc_slot, release_slot, StallTracker, ThreadHint, GIL};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -60,7 +60,7 @@ impl PyStallTracker {
     }
 
     fn go_active(&self) -> PyResult<()> {
-        let stall_tracker = rustify(&self)?;
+        let stall_tracker = rustify(self)?;
         if stall_tracker.is_active() {
             return Err(PyRuntimeError::new_err("Already active"));
         }
@@ -69,7 +69,7 @@ impl PyStallTracker {
     }
 
     fn go_idle(&self) -> PyResult<()> {
-        let stall_tracker = rustify(&self)?;
+        let stall_tracker = rustify(self)?;
         if !stall_tracker.is_active() {
             return Err(PyRuntimeError::new_err("Already idle"));
         }
@@ -78,12 +78,12 @@ impl PyStallTracker {
     }
 
     fn is_active(&self) -> PyResult<bool> {
-        let stall_tracker = rustify(&self)?;
+        let stall_tracker = rustify(self)?;
         Ok(stall_tracker.is_active())
     }
 
     fn counter_address(&self) -> PyResult<usize> {
-        Ok(&rustify(&self)?.count as *const _ as usize)
+        Ok(&rustify(self)?.count as *const _ as usize)
     }
 
     fn close(&mut self) -> PyResult<()> {
