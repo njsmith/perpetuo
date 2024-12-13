@@ -67,8 +67,7 @@ fn main() -> Result<()> {
     // Set up death signal before doing anything else
     #[cfg(target_os = "linux")]
     unsafe {
-        // SIGTERM = 15
-        if libc::prctl(libc::PR_SET_PDEATHSIG, 15, 0, 0, 0) != 0 {
+        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM, 0, 0, 0) != 0 {
             log(Severity::Warning, 
                 "Failed to set PR_SET_PDEATHSIG - watcher may not exit properly if parent dies",
                 None,
