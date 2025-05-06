@@ -48,11 +48,19 @@ other things. See source for details.
 
 ## Patching CPython to instrument the GIL
 
-Currently the patch is only available for CPython version 3.10.*. It can be
-downloaded here: 
+There are patches available for:
+
+CPython version 3.10.*:
 
   https://github.com/python/cpython/compare/3.10...njsmith:cpython:njs/perpetuo-gil.diff
 
+CPython version 3.11:
+
+  https://github.com/python/cpython/compare/3.11...njsmith:cpython:njs/perpetuo-gil-3.11.diff
+
+CPython version 3.12:
+
+  https://github.com/python/cpython/compare/3.12...njsmith:cpython:njs/perpetuo-gil-3.12.diff
 
 ## Bonus
 
