@@ -29,6 +29,7 @@ struct LocalVariable {
 
 #[derive(Serialize)]
 pub struct StallDetails {
+    pub id: usize,
     pub length_ms: f64,
     pub relevant_traces: Vec<Vec<StackFrame>>,
     pub other_traces: Vec<Vec<StackFrame>>,

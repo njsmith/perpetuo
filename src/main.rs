@@ -187,11 +187,13 @@ fn check_once(
         let mut additional_info = HashMap::new();
         additional_info.insert("name".to_string(), stall.name.to_string());
         additional_info.insert("pid".to_string(), proc.spy.process.pid.to_string());
+        let id = stall.id;
         let length_ms = stall.duration.as_secs_f64() * 1000.0;
 
         let now = Instant::now();
         if now < *next_traceback {
             let details = StallDetails {
+                id,
                 length_ms,
                 relevant_traces: vec![],
                 other_traces: vec![],
@@ -222,6 +224,7 @@ fn check_once(
             }
         }
         let details = StallDetails {
+            id,
             length_ms,
             relevant_traces,
             other_traces,
