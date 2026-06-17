@@ -96,6 +96,28 @@ impl StallTracker {
     }
 }
 
+/// Plain-data copy of a `StallTracker`, for reading slots out of the target process
+/// (`ProcessMemory::copy_vec` requires `Copy`, which `AtomicU64` isn't).
+///
+/// Must have the same layout as `StallTracker`: `AtomicU64` is guaranteed to have the
+/// same in-memory representation as `u64`, and the explicit `align(8)` matches
+/// `AtomicU64`'s alignment on targets where plain `u64` is less aligned.
+#[derive(Clone, Copy, Debug)]
+#[repr(C, align(8))]
+pub struct StallTrackerSample {
+    pub count: u64,
+    pub metadata: SlotMetadata,
+}
+
+const _: () = assert!(size_of::<StallTrackerSample>() == size_of::<StallTracker>());
+const _: () = assert!(align_of::<StallTrackerSample>() == align_of::<StallTracker>());
+
+impl StallTrackerSample {
+    pub fn is_active(&self) -> bool {
+        self.count % 2 == 1
+    }
+}
+
 fn create_exported_slots() -> &'static mut [StallTracker] {
     let mut page = memmap::MmapMut::map_anon(*PAGE_SIZE).unwrap();
     // anonymous mmap returns pre-zeroed pages
@@ -163,7 +185,7 @@ pub fn release_slot(slot: &'static mut StallTracker) -> Result<()> {
 }
 
 struct StallTrackerSnapshot {
-    stall_tracker: StallTracker,
+    stall_tracker: StallTrackerSample,
     last_updated: Instant,
 }
 
@@ -227,7 +249,7 @@ impl PerpetuoProc {
                         (map.start() + map.size() - slots_ptr) / size_of::<StallTracker>();
                     let slots = spy
                         .process
-                        .copy_vec::<StallTracker>(slots_ptr, slots_count)?;
+                        .copy_vec::<StallTrackerSample>(slots_ptr, slots_count)?;
                     let now = Instant::now();
                     let last_updates = slots
                         .into_iter()
@@ -256,16 +278,13 @@ impl PerpetuoProc {
         let current_slots = self
             .spy
             .process
-            .copy_vec::<StallTracker>(self.slots_ptr, self.slots_count)?;
+            .copy_vec::<StallTrackerSample>(self.slots_ptr, self.slots_count)?;
 
         let mut stalls = Vec::new();
 
         for (id, current) in current_slots.into_iter().enumerate() {
             let snapshot = &mut self.last_updates[id];
-            if current.is_active()
-                && current.count.load(Ordering::Relaxed)
-                    == snapshot.stall_tracker.count.load(Ordering::Relaxed)
-            {
+            if current.is_active() && current.count == snapshot.stall_tracker.count {
                 if now.duration_since(snapshot.last_updated) >= alert_interval {
                     // stall detected!
                     let name = self
