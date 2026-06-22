@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.16.5
+        uses: pypa/cibuildwheel@v3.4.1
         env:
           CARGO_REGISTRIES_CRATES_IO_PROTOCOL: "sparse"
           # We build abi3 wheels, so we only want to build once, on the lowest-supported-python
@@ -49,6 +49,8 @@ jobs:
           # would need to set up libunwind for this, and remoteprocess build.rs has hard-coded opinions
           # about how this should be done that we'd need to work with/around.
           CIBW_SKIP: "*musllinux*"
+          # cibuildwheel 3.x defaults to manylinux_2_28; keep manylinux2014 for now.
+          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux2014"
           CIBW_BEFORE_ALL_LINUX: "bash ./prep-manylinux-container.sh"
           CIBW_BEFORE_ALL_MACOS: "rustup target add aarch64-apple-darwin x86_64-apple-darwin"
           CIBW_ENVIRONMENT: 'PATH="$HOME/.cargo/bin:$PATH"'

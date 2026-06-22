@@ -4,9 +4,6 @@ set -exo pipefail
 
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
-# remoteprocess links liblzma for symbolication.
-yum install -y xz-devel
-
 # We could get libunwind by doing
 #
 #   yum install -y libunwind-devel
