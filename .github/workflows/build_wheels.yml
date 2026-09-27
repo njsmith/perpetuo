@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -49,13 +49,18 @@ jobs:
           # would need to set up libunwind for this, and remoteprocess build.rs has hard-coded opinions
           # about how this should be done that we'd need to work with/around.
           CIBW_SKIP: "*musllinux*"
-          # cibuildwheel 3.x defaults to manylinux_2_28; keep manylinux2014 for now.
+          # cibuildwheel 3.x defaults to manylinux_2_28; keep manylinux2014 for x86_64 for now
+          # so we don't raise its glibc floor. aarch64 is new, so it uses the default.
           CIBW_MANYLINUX_X86_64_IMAGE: "manylinux2014"
           CIBW_BEFORE_ALL_LINUX: "bash ./prep-manylinux-container.sh"
           CIBW_BEFORE_ALL_MACOS: "rustup target add aarch64-apple-darwin x86_64-apple-darwin"
           CIBW_ENVIRONMENT: 'PATH="$HOME/.cargo/bin:$PATH"'
+          # libunwind is built with zlib support (it calls uncompress()), but the remoteprocess
+          # build.rs only links lzma, so link zlib explicitly. CIBW_ENVIRONMENT_LINUX replaces
+          # CIBW_ENVIRONMENT, so PATH is repeated.
+          CIBW_ENVIRONMENT_LINUX: 'PATH="$HOME/.cargo/bin:$PATH" RUSTFLAGS="-C link-arg=-lz"'
           CIBW_ENVIRONMENT_MACOS: 'PATH="$HOME/.cargo/bin:$PATH" MACOSX_DEPLOYMENT_TARGET=10.12'
-          CIBW_ARCHS_LINUX: "x86_64"
+          CIBW_ARCHS_LINUX: "native"
           CIBW_ARCHS_WINDOWS: "AMD64"
           CIBW_ARCHS_MACOS: "universal2"
         # env:

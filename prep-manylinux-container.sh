@@ -19,6 +19,8 @@ curl -L https://github.com/libunwind/libunwind/archive/refs/tags/v1.6.2.tar.gz  
 tar xvf libunwind.tar.gz
 cd libunwind-*/
 autoreconf -i
-./configure CFLAGS="-fPIC" --enable-static
+# libunwind 1.6.2's aarch64 code passes ucontext_t* where unw_tdep_context_t* is expected.
+# gcc 14 (in manylinux_2_28) makes that an error by default, so keep it a warning.
+./configure CFLAGS="-fPIC -Wno-error=incompatible-pointer-types" --enable-static
 make -j3
 make install
