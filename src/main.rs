@@ -64,6 +64,18 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Set up death signal before doing anything else
+    #[cfg(target_os = "linux")]
+    unsafe {
+        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM, 0, 0, 0) != 0 {
+            log(Severity::Warning, 
+                "Failed to set PR_SET_PDEATHSIG - watcher may not exit properly if parent dies",
+                None,
+                cli.json_mode
+            );
+        }
+    }
+
     match cli.command {
         Commands::Watch { pid } => watch_process(pid, &cli)?,
     }
